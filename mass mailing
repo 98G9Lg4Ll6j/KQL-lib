@@ -13,6 +13,8 @@ let MassMailEvents = EmailEvents
 let UserInfo = IdentityInfo
 | distinct EmailAddress, JobTitle
 | where isnotempty(JobTitle);
+// applying filter here as service accounts typically do not have associated JobTitle
+// comment above filter line out if user account data are not populated into Azure
 MassMailEvents
 | join kind=inner UserInfo on EmailAddress
 | project Subject, Timestamp, MassMailCount, EmailAddress, JobTitle
