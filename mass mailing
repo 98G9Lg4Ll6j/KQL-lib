@@ -1,0 +1,18 @@
+// MS Defender KQL query
+// intended to quickly capture spam or unintended use of user mailbox for mass mailing
+// parameters messageThreshold and timeInterval can be set based on use case
+
+let messageThreshold = 50;
+let timeInterval = timespan(10m);
+let MassMailEvents = EmailEvents
+| where EmailDirection == @"Outbound"
+| extend Timestamp = bin(Timestamp, timeInterval)
+| summarize MassMailCount=dcount(RecipientEmailAddress) by Subject, EmailAddress=SenderFromAddress, Timestamp
+| where MassMailCount >= messageThreshold
+| sort by MassMailCount desc;
+let UserInfo = IdentityInfo
+| distinct EmailAddress, JobTitle
+| where isnotempty(JobTitle);
+MassMailEvents
+| join kind=inner UserInfo on EmailAddress
+| project Subject, Timestamp, MassMailCount, EmailAddress, JobTitle
