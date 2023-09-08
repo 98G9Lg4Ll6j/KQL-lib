@@ -1,3 +1,6 @@
+// Sentinel query for object create and delete in short internal
+// TimeDiff and QueryTime are parameters that can be set based on use case
+
 let TimeDiff = timespan(10min);
 let QueryTime = timespan(3d);
 let UserDeletion = SecurityEvent
