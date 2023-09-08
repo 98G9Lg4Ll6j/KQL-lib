@@ -1,0 +1,25 @@
+let TimeDiff = timespan(10min);
+let QueryTime = timespan(3d);
+let UserDeletion = SecurityEvent
+    | where TimeGenerated >= ago(QueryTime)
+    | where EventID in ("5141")
+    | extend DeleteEvent = parse_xml(EventData)
+    | extend TargetObject = extract(@"^CN\=(\w*\s\w*),",1,tostring(parse_json(tostring(parse_json(tostring(DeleteEvent.EventData)).Data))[8].["#text"]))
+    | where isnotempty(TargetObject)
+    | extend DeletionTime = TimeGenerated
+    | extend DeleteAdmin = tostring(parse_json(tostring(parse_json(tostring(DeleteEvent.EventData)).Data))[3].["#text"])
+    | project DeletionTime, DeleteAdmin, TargetObject
+    ;
+let UserCreation = SecurityEvent
+    | where TimeGenerated >= ago(QueryTime)
+    | where EventID in ("4720")
+    | extend CreationTime = TimeGenerated
+    | extend TargetObject = DisplayName
+    | extend CreateAdmin = SubjectUserName
+    | project CreationTime, CreateAdmin, TargetObject
+    ;
+UserDeletion
+| join kind=inner UserCreation on TargetObject
+| where DeletionTime - CreationTime < TimeDiff
+| project CreationTime, CreateAdmin, DeletionTime, DeleteAdmin, TargetObject
+| distinct *
