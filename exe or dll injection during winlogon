@@ -1,0 +1,16 @@
+// query writen by Jack Liu
+// query for purpose of detecting winlogon exe or dll injection
+
+DeviceRegistryEvents
+// although we are detecting injection attacks, in this case the injected files themselves can be set any name, from any source
+// whatever the files are from, to load them will need to corrupt registry to map key such as userinit to call the malicious file
+// so we are looking for registry events
+| where RegistryKey startswith "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"
+// We are looking for any winlogon and subkeys activities
+| where InitiatingProcessAccountSid !in~ ("S-1-5-18","S-1-5-19","S-1-5-20")
+// exempting known system SID's as we are assuming no compromise on system account/process
+| where RegistryValueType in ("String", "ExpandString", "MultiString")
+// injection attacks here will typically require setting regkey with string values for registry to call the malicious file
+// so this filter looks only for string data types
+| project Timestamp, DeviceId, RegistryKey, RegistryValueName, RegistryValueData, 
+    InitiatingProcessAccountName, InitiatingProcessFileName, SignerInfo=InitiatingProcessVersionInfoProductName
