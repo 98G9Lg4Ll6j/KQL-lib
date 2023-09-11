@@ -21,3 +21,4 @@ let UnknownDeviceSignins = SigninLogs
 | project-away AppDisplayName, ResourceDisplayName, set_deviceId_, set_DeviceName
 | distinct *;
 UnknownDeviceSignins
+// optional, apply regex to match deviceName/ID to exempt allowed internal use
