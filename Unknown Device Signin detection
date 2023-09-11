@@ -8,11 +8,9 @@ let UserSigninDeviceCap = SigninLogs
 | extend deviceId_ = tostring(DeviceDetail.deviceId)
 | where isnotempty(deviceId_)
 | extend DeviceName = tostring(DeviceDetail.displayName)
-| where UserPrincipalName !contains "_adm"
 | summarize make_set(DeviceName,5), make_set(deviceId_,5) by UserPrincipalName;
 // then generate signin events during detection period where devices not in baseline
 let UnknownDeviceSignins = SigninLogs
-| where UserPrincipalName <> "customerservices@vertumotors.com"
 | where TimeGenerated >= ago(1d)
 | extend SusDeviceID = tostring(DeviceDetail.deviceId)
 | extend SusDeviceName = tostring(DeviceDetail.displayName)
