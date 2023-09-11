@@ -1,0 +1,23 @@
+let DeviceActivityPeriod = 7d;
+let DetectionPeriod = 1d;
+// first performing capture of user signin devices, creating set of seen devices treat as baseline
+let UserSigninDeviceCap = SigninLogs
+| where UserPrincipalName <> "customerservices@vertumotors.com"
+| where TimeGenerated between (ago(DeviceActivityPeriod) .. ago(DetectionPeriod))
+| extend deviceId_ = tostring(DeviceDetail.deviceId)
+| where isnotempty(deviceId_)
+| extend DeviceName = tostring(DeviceDetail.displayName)
+| where UserPrincipalName !contains "_adm"
+| summarize make_set(DeviceName,3), make_set(deviceId_, 3) by UserPrincipalName;
+// then generate signin events during detection period where devices not in baseline
+let UnknownDeviceSignins = SigninLogs
+| where UserPrincipalName <> "customerservices@vertumotors.com"
+| where TimeGenerated >= ago(1d)
+| extend SusDeviceID = tostring(DeviceDetail.deviceId)
+| extend SusDeviceName = tostring(DeviceDetail.displayName)
+| project UserPrincipalName, ResultType, AppDisplayName, ResourceDisplayName, SusDeviceID, SusDeviceName
+| join kind=inner UserSigninDeviceCap on UserPrincipalName
+| where set_deviceId_ !has SusDeviceID
+| project-away AppDisplayName, ResourceDisplayName, set_deviceId_, set_DeviceName
+| distinct *;
+UnknownDeviceSignins
