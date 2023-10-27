@@ -1,0 +1,30 @@
+// query intended to catch non windows system dll process
+// attention should be especially paid to processes with rundll commandline as:
+//  rundll32.exe –localserver <CLSID_GUID>  or   rundll32.exe –sta <CLSID_GUID>
+// threat actor may have been able to inject malicious dll payload and set persistent execution via registry GUID
+//  [HKEY_CLASSES_ROOT\CLSID\{01234567-0123-0123-0123-0123456789ab}]
+// HTML/JavaScript code can be executed via command similar to:
+//  rundll32.exe javascript:"\..\mshtml,RunHTMLApplication <HTML Code>
+
+DeviceProcessEvents
+| where Timestamp >= ago(1h)
+| where FileName == "rundll32.exe" and ActionType == 'ProcessCreated'
+// assume local system privileged access has not yet been compromised
+| where InitiatingProcessAccountSid !in~ ("S-1-5-18","S-1-5-19","S-1-5-20")
+// remove rundll executable call at start of commandline
+| extend StrippedCommandLine = trim_start(@'^((.)?rundll32(\.exe)?(.)?\s)', tolower(ProcessCommandLine))
+// remove rundll executable switches that are observed on some instances
+| extend StrippedCommandLine = trim_start(@'\/\w\s', StrippedCommandLine)
+// by extracting the dll file from beginning of the commandline, if a process command calls dll file without path
+// dll is referenced from system dll library, assuming no existing breach, we can ignore this
+| extend ExecutingDLL = extract(@'^((\w|\d|\_|\-|\.)*.dll)', 1, StrippedCommandLine)
+| where isempty(ExecutingDLL)
+// below condition set so windows directory executables are ignored - again assuming no privesc breach
+// then to also catch any events on 3 common dll injection/sideload methods
+| where (StrippedCommandLine !startswith "c:\\windows" and StrippedCommandLine !startswith '"c:\\windows')
+    or (StrippedCommandLine startswith "-localserver" or StrippedCommandLine startswith "-sta" 
+    or StrippedCommandLine startswith "javascript")
+// add filters here to omit benign activities
+| extend SuspiciousDLL = extract(@'\\((\w|\d|\-|\_)*\.dll)',1,StrippedCommandLine)
+| project Timestamp, DeviceId, DeviceName, ProcessCommandLine, InitiatingProcessCommandLine, 
+    InitiatingProcessVersionInfoCompanyName, ReportId, StrippedCommandLine, SuspiciousDLL
