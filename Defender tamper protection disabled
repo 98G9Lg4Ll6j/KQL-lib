@@ -1,12 +1,37 @@
-// Defender KQL query for disabled tamper protection on client AV Defender for Endpoint
+// Defender KQL query for disabled Defender for Endpoint services
 
-let RecentDevices = DeviceInfo
-| where Timestamp >= ago(7d) and isnotempty(OSPlatform)
-| distinct DeviceId, MachineGroup;
-DeviceTvmSecureConfigurationAssessment
-| join kind=inner RecentDevices on DeviceId
-| where ConfigurationId == "scid-2003" and IsApplicable == 1
-| extend Status = iif(IsCompliant == 0, "Tamper Protection DISABLED", "Tamper Protection OK")
-| where IsCompliant==0
-| project DeviceId, DeviceName, OSPlatform, ConfigurationId, MachineGroup, Status
-// devices may be grouped for ease of management, here MachineGroup column is included to explore specific set of devices
+DeviceTvmSecureConfigurationAssessment 
+| where isempty(IsCompliant)
+// Defender configuration IDs taken from github: 
+// https://github.com/Azure/Azure-Sentinel/blob/master/Hunting%20Queries/Microsoft%20365%20Defender/General%20queries/Endpoint%20Agent%20Health%20Status%20Report.yaml
+| extend DefenderService = case(
+    ConfigurationId == "scid-2000", "SensorEnabled",
+    ConfigurationId == "scid-2001", "SensorDataCollection_Win", //windows
+    ConfigurationId == "scid-5001", "SensorDataCollection_Mac", //macOS
+    ConfigurationId == "scid-6001", "SensorDataCollection_Lin", //linux
+    ConfigurationId == "scid-2002", "ImpairedCommunications_Win", //windows
+    ConfigurationId == "scid-5002", "ImpairedCommunications_Mac", //macOS
+    ConfigurationId == "scid-6002", "ImpairedCommunications_Lin", //linux
+    ConfigurationId == "scid-2003", "TamperProtection_Win", //windows
+    ConfigurationId == "scid-5092", "TamperProtection_Mac", //macOS
+    ConfigurationId == "scid-2010", "AntivirusEnabled",
+    ConfigurationId == "scid-2011", "AntivirusSignatureVersion_Win", //windows
+    ConfigurationId == "scid-5095", "AntivirusSignatureVersion_Mac", //macOS
+    ConfigurationId == "scid-6095", "AntivirusSignatureVersion_Lin", //linux
+    ConfigurationId == "scid-2012", "RealtimeProtection_Win", //windows
+    ConfigurationId == "scid-5090", "RealtimeProtection_Mac", //macOS
+    ConfigurationId == "scid-6090", "RealtimeProtection_Lin", //linux
+    ConfigurationId == "scid-91"  , "BehaviorMonitoring",
+    ConfigurationId == "scid-2013", "PUAProtection_Win", // windows
+    ConfigurationId == "scid-5091", "PUAProtection_Mac", //macOS
+    ConfigurationId == "scid-6091", "PUAProtection_Lin", //linux
+    ConfigurationId == "scid-2014", "AntivirusReporting",
+    ConfigurationId == "scid-2016", "CloudProtection_Win", //windows
+    ConfigurationId == "scid-5094", "CloudProtection_Mac", //macOS
+    ConfigurationId == "scid-6094", "CloudProtection_Lin", //linux
+    "N/A")
+| where DefenderService != @"N/A"
+// extracting config targeting OS to match machine OS for applicable configurations
+| extend ServiceTargetOS = tolower(extract(@'\_(\w*)$',1,DefenderService))
+| where OSPlatform contains tostring(ServiceTargetOS)
+| summarize NonCompliantDefenderConfig=make_set(DefenderService) by DeviceName, OSPlatform
