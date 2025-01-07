@@ -1,0 +1,42 @@
+This is a write up for an interesting case from MS KQL detective event I took part in during 2024.
+
+The challenge involves a large set of data consisting of network logs from various networking devices, as well as data on vulnerabilities that were present on devices.
+
+It was suspected that an internal admin device was compromised, though the attack path by the attacker remains unknown. It is suspected that attacker moved through exploiting vulnerabilities that were present.
+
+First, we can establish list of devices and device type by the scan reports, these will be devices with vulnerabilities present.
+	let nodeDevies = MachineLogs
+	| where EventType == 'PeriodicScan' and Message !endswith '0 critical vulnerabilities were found.'
+	| extend DeviceType = extract(@'^\w+',0,Message)
+	| project-away Timestamp, Message, EventType
+  | distinct *;
+
+Then extract the machine logs for vulnerable devices, then select the spawn task event - this allows the selection of task creation on backend devices. 
+The creation of new tasks from parent tasks will be used as graph edges.
+	let edges=MachineLogs
+	| where Machine in (nodeDevies | distinct Machine) and EventType == 'SpawnTask'
+	| extend taskID = extract(@'^TaskID\=((\w|\-)*)',1,Message)
+	| extend childTask = extract(@'\sTaskID\=((\w|\-)*)',1,Message)
+	| project taskID, childTask;
+
+To map from node(vertex) to nodes, first current taskID must be included; then we need to include device type to enable selection of gateway and admin devices; lastly, we would like to output specific device IDs, so include machine field. 
+To do this, we can take device info from vulnerable device list prior, then adding incoming request data, which contains when taskID are assigned to devices.
+	let nodes = MachineLogs
+	| where Machine in (nodeDevies | distinct Machine) and EventType == 'IncomingRequest'
+	| join kind=inner nodeDevies on Machine
+	| extend taskID = extract(@'TaskID\=((\w|\-)*)',1,Message)
+	| project Machine, DeviceType, taskID;
+
+Now all theres left is to create the graph.
+
+First, in KQL we must (all examples follow this structure) start with edge definition. 
+The edges represents a map from taskID to childtaskID in the same edges schema table (as we are not so interested in the backends, if we aim to identify the backend devices, we will need to expand the graph edge and matching).
+Then, the taskID must be taken from fields from nodes, nodes here are start and finish, meaning gateway and admin devices respectively. Those devices are included in the nodes table, so we place nodes on taskID.
+Lastly, set the graph matching between gateway, edge logic, and admin device. Since we do not know how many backend devices the intrusion hopped through, we set an arbitary 1-100 range for edge length (relation referring to defined graph logic). 
+Using conditional filters to condition the node properties (conditions can be added on graph edge as well, but not required here), so the graph must start with a gateway node and end on admin node.
+This, once projected, grants the results.
+	Edges
+	| make-graph taskID --> childTask with nodes on taskID
+	| graph-match (gateway) -[relation*1..100]-> (admin)
+	    where gateway.DeviceType == 'Gateway' and admin.DeviceType == 'Admin'
+	    project gateway.Machine, admin.Machine, admin.taskID
