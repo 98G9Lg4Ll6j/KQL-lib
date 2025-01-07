@@ -1,0 +1,86 @@
+let exemptSubnets = dynamic([""]); //insert your good subnets here
+let queryInterface = dynamic([""]); //add here palo FW interface for VPN
+let VPNIPAddress = ""; //potentially IP address for VPN over HTTPS
+// set time stamps
+let TrendMonitorPeriod = 15d;
+let ScanPeriod = 1d;
+// generate a date list - used for later list comprehension
+// this part is due improvement as datetime() function can be used to dynamically set date list without using table
+let TrendMonitoredDates = CommonSecurityLog
+| where TimeGenerated >= ago(TrendMonitorPeriod)
+| summarize by eventDates=format_datetime(TimeGenerated, 'yyyy-MM-dd')
+| summarize make_set(eventDates, maxsize=14)
+// join field used later for table join
+| extend joinField = 1;
+// create past VPN data capture table
+// extend a guessed subnet value taking the first 2 octets of the IPv4 address from FW
+let MonitoredVPNTrafficDataTrend = CommonSecurityLog
+| where DeviceVendor == "Palo Alto Networks" and TimeGenerated between (ago(TrendMonitorPeriod) .. ago(TrendMonitorPeriod-ScanPeriod))
+| where DeviceInboundInterface in (queryInterface) and DestinationTranslatedAddress == VPNIPAddress and ApplicationProtocol == "web-browsing"
+| extend potentialSubnet = strcat(extract(@'^(\d+.){2}', 0, SourceTranslatedAddress), '0.0');
+// create a last 24h VPN request table
+let ScannedVPNData = CommonSecurityLog
+| where DeviceVendor == "Palo Alto Networks" and TimeGenerated >= ago(ScanPeriod)
+| where DeviceInboundInterface in (queryInterface) and DestinationTranslatedAddress == "VPNIPAddress" and ApplicationProtocol == "web-browsing"
+| extend potentialSubnet = strcat(extract(@'^(\d+.){2}', 0, SourceTranslatedAddress), '0.0');
+// for the last 24h VPN table, set filter and distinct subnet values to create list of suspicious subnets
+let suspiciousSubnets = ScannedVPNData
+| summarize eventCount=dcount(FieldDeviceCustomNumber1) by potentialSubnet
+| where eventCount > 10
+| distinct suspiciousSubnets=potentialSubnet;
+// generate based on past VPN data, a normal distribution statistical model
+let VPNTrafficModel = MonitoredVPNTrafficDataTrend
+// first only to target subnets from suspicious subnet list and also not in zscaler subnet
+| where potentialSubnet in (suspiciousSubnets) and potentialSubnet !in (SuspiciousVPNRequests)
+// set times to date format
+| extend actvityDate = format_datetime(TimeGenerated, 'yyyy-MM-dd')
+// count VPN request sessions per subnet and date
+| summarize eventCount=toint(dcount(FieldDeviceCustomNumber1)) by potentialSubnet, actvityDate
+| sort by potentialSubnet, actvityDate
+// put dates and session counts into lists
+| summarize make_set(actvityDate, maxsize=14), make_set(eventCount, maxsize=14) by potentialSubnet
+| extend joinField = 1
+// add date list object into table as extra column to be used for iteration
+| join kind=fullouter TrendMonitoredDates on joinField
+| project-away joinField, joinField1
+// there is no builtin iterator in KQL, so manually performing assignment 13 times, increase if query changes
+// assignment logic is if number of elements in VPN session count list is less than number of elements in dates object
+// pad the count list with another zero, else assign to current VPN session count list
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(set_actvityDate)<array_length(set_eventDates), todynamic(set_eventCount).pack_array(0), set_eventCount )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+| extend EventSetTrend = todynamic(strcat('[',replace_regex(tostring(iff( array_length(EventSetTrend)<array_length(set_eventDates), todynamic(EventSetTrend).pack_array(0), EventSetTrend )), @'[\[\]]', ''),']'))
+// discard all unused columns
+| project-away set_eventDates, set_eventCount, set_actvityDate
+// expand the new VPN session count list, so that count values exist for all subnets and all dates
+| mv-expand EventSetTrend;
+let StatisticalModel = VPNTrafficModel
+// generate average and standard deviation values for the current list for each subnet
+| summarize stdev(toint(EventSetTrend)), avg(toint(EventSetTrend)) by potentialSubnet;
+// apply the statistical model against the 24h VPN request volume table
+// using 3 times standard deviation as model to identify request volume anomaly outside of 99.7% distribution
+let AnomalyRequestSubnets = ScannedVPNData
+| summarize eventCount=dcount(FieldDeviceCustomNumber1) by potentialSubnet
+| join StatisticalModel on potentialSubnet
+| project potentialSubnet, MonitoredTrafficVolume=eventCount, SubnetTrendStdev=tolong(stdev_EventSetTrend), SubnetTrendAvg=tolong(avg_EventSetTrend)
+| where MonitoredTrafficVolume > (SubnetTrendAvg + (3*SubnetTrendStdev))
+| distinct potentialSubnet;
+// actions from here:
+// take identified subnets and re-cast back to VPN request table for displaying specific request events and properties
+let SuspiciousVPNRequests = ScannedVPNData
+| where potentialSubnet in ( AnomalyRequestSubnets )
+| project TimeGenerated, Device='Palo Alt Firewall', DeviceAction, DeviceInboundInterface, DestinationIP, DestinationPort, SourceIP, SourcePort, potentialSubnet, PaloRuleApplied=DeviceCustomString1, PaloEventCategory=DeviceCustomString2, RequestPacketSize=FlexNumber1, PaloSessionID=FieldDeviceCustomNumber1;
+// take identified subnets and re-cast back to historical+24h VPN table to form request volume profile
+// VPNTrafficModel | where potentialSubnet in (AnomalyRequestSubnets)
+// this may not be easy to do due to difficulties in implementing list recursions+comprehension in KQL
+// lastly the detected suspicious subnet or all suspicious VPN request data can be listed as output
+AnomalyRequestSubnets
