@@ -9,7 +9,7 @@ First, we can establish list of devices and device type by the scan reports, the
 	| where EventType == 'PeriodicScan' and Message !endswith '0 critical vulnerabilities were found.'
 	| extend DeviceType = extract(@'^\w+',0,Message)
 	| project-away Timestamp, Message, EventType
-  | distinct *;
+  	| distinct *;
 
 Then extract the machine logs for vulnerable devices, then select the spawn task event - this allows the selection of task creation on backend devices. 
 The creation of new tasks from parent tasks will be used as graph edges.
